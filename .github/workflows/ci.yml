@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  basic-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Sanity checks
+        run: |
+          python -V
+          test -f requirements.txt && echo "requirements.txt present" || (echo "requirements.txt missing" && exit 1)
+          test -f tumor_analysis.ipynb && echo "notebook present" || echo "notebook missing"
