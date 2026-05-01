@@ -14,3 +14,7 @@ build/
 .ipynb_checkpoints/
 .DS_Store
 models/*.pth
+*.zip
+data/
+archive (1)/
+archive (1).zip
