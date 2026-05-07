@@ -47,6 +47,22 @@ def load_segmentation(device):
     except Exception:
         return None
 
+def monte_carlo_predict(model, tensor, device, n_runs=50):
+    import numpy as np
+    model.train()  # keeps dropout ON to estimate uncertainty
+    predictions = []
+    with torch.no_grad():
+        for _ in range(n_runs):
+            logits = model(tensor.unsqueeze(0).to(device))
+            probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
+            predictions.append(probs)
+    
+    model.eval() # restore to eval mode
+    
+    predictions = np.array(predictions)
+    mean_probs  = predictions.mean(axis=0)
+    uncertainty = predictions.std(axis=0)
+    return mean_probs, uncertainty
 
 def main():
     st.set_page_config(layout='wide', page_title='Brain Tumor Analyzer')
@@ -136,10 +152,10 @@ def main():
             st.markdown(f"**Prediction:** {labels[pred]} — **Confidence:** {conf:.3f}")
 
             # ═══════════════════════════════════════════════════════════════
-            # 🧠 MODEL THOUGHT PROCESS — Explainability Section
+            # MODEL THOUGHT PROCESS — Explainability Section
             # ═══════════════════════════════════════════════════════════════
             st.markdown("---")
-            st.subheader("🧠 Model Thought Process")
+            st.subheader("Model Thought Process")
             
             if 'grayscale_cam' in st.session_state:
                 import numpy as np
@@ -151,7 +167,7 @@ def main():
                 # ──────────────────────────────────────────────────────────
                 # 1. WHY THIS CLASS AND NOT OTHERS
                 # ──────────────────────────────────────────────────────────
-                st.markdown("#### 1️⃣ Why This Class and Not Others")
+                st.markdown("#### 1. Why This Class and Not Others")
                 
                 # Create horizontal probability bars
                 cols_prob = st.columns(len(labels))
@@ -175,7 +191,7 @@ def main():
                 # ──────────────────────────────────────────────────────────
                 # 2. WHERE THE MODEL LOOKED — Region Attention Breakdown
                 # ──────────────────────────────────────────────────────────
-                st.markdown("#### 2️⃣ Where the Model Looked")
+                st.markdown("#### 2. Where the Model Looked")
                 
                 # Divide into 5 regions: UL, UR, LL, LR, Center
                 h, w = grayscale_cam.shape
@@ -216,7 +232,7 @@ def main():
                 # ──────────────────────────────────────────────────────────
                 # 3. ATTENTION METRICS
                 # ──────────────────────────────────────────────────────────
-                st.markdown("#### 3️⃣ Attention Metrics")
+                st.markdown("#### 3. Attention Metrics")
                 
                 peak_attention = np.max(grayscale_cam) * 100
                 mean_attention = np.mean(grayscale_cam) * 100
@@ -226,16 +242,16 @@ def main():
                 
                 metric_cols = st.columns(3)
                 with metric_cols[0]:
-                    st.metric(label="🔥 Peak Attention", value=f"{peak_attention:.1f}%")
+                    st.metric(label="Peak Attention", value=f"{peak_attention:.1f}%")
                 with metric_cols[1]:
-                    st.metric(label="📊 Mean Attention", value=f"{mean_attention:.1f}%")
+                    st.metric(label="Mean Attention", value=f"{mean_attention:.1f}%")
                 with metric_cols[2]:
-                    st.metric(label="🎯 Scan Focused On", value=f"{focused_area_pct:.1f}%")
+                    st.metric(label="Scan Focused On", value=f"{focused_area_pct:.1f}%")
                 
                 # ──────────────────────────────────────────────────────────
                 # 4. EXPLANATION SUMMARY
                 # ──────────────────────────────────────────────────────────
-                st.markdown("#### 4️⃣ Model's Reasoning")
+                st.markdown("#### 4. Model's Reasoning")
                 
                 summary_text = f"""
                 The model was **{conf*100:.1f}% confident** this is a **{labels[pred]}** scan, 
@@ -245,6 +261,27 @@ def main():
                 """
                 
                 st.info(summary_text)
+
+                # ──────────────────────────────────────────────────────────
+                # 5. MONTE CARLO DROPOUT (UNCERTAINTY ESTIMATION)
+                # ──────────────────────────────────────────────────────────
+                st.markdown("---")
+                st.subheader("Monte Carlo Dropout (Uncertainty Estimation)")
+                st.markdown("We run the image through the model 50 times with Dropout enabled to estimate the model's uncertainty. Lower uncertainty indicates higher confidence in its prediction.")
+                
+                with st.spinner("Running Monte Carlo sampling..."):
+                    mc_mean_probs, mc_uncertainty = monte_carlo_predict(classifier, input_tensor, device, n_runs=50)
+                
+                st.markdown("#### Results (50 runs)")
+                mc_cols = st.columns(len(labels))
+                for idx, (cls_name, mean_p, std_p) in enumerate(zip(labels, mc_mean_probs, mc_uncertainty)):
+                    with mc_cols[idx]:
+                        st.metric(
+                            label=f"{cls_name}", 
+                            value=f"{mean_p * 100:.1f}%",
+                            delta=f"± {std_p * 100:.2f}%",
+                            delta_color="off"
+                        )
 
 
 if __name__ == '__main__':
